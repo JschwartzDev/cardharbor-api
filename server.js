@@ -5,149 +5,136 @@ const queries = require("./queries");
 const PORT = 4400;
 const app = express();
 
+const fs = require("fs");
+
 app.use(cors());
 app.use(express.json());
 
 app.get("/tntcards", (req, res) => {
   const currentPage = req.query.currentPage;
   const keywords = req.query.keywords;
-  const priceLow = req.query.priceLow;
-  const priceHigh = req.query.priceHigh;
+  const maxPrice = req.query.maxPrice;
   const selectedPerPage = req.query.selectedPerPage;
+
+  const stopIndex = currentPage * selectedPerPage;
+  const startIndex = (currentPage - 1) * selectedPerPage;
 
   pool.query(queries.getAllTntCards, (error, result) => {
     if (error) throw error;
-    const stopIndex = currentPage * selectedPerPage;
-    const startIndex = (currentPage - 1) * selectedPerPage;
+    let tntCards = result.rows;
+
     if (keywords) {
-      const filtered = result.rows.filter((item) =>
+      tntCards = tntCards.filter((item) =>
         item.name.toLowerCase().includes(keywords.toLowerCase())
       );
-      const perPageCards = filtered.slice(startIndex, stopIndex);
-      res.status(200).json({
-        items: perPageCards,
-        total: result.rowCount,
-        message: keywords,
-      });
-    } else {
-      const perPageCards = result.rows.slice(startIndex, stopIndex);
-      res.status(200).json({ items: perPageCards, total: result.rowCount });
     }
+
+    if (maxPrice) {
+      tntCards.forEach((card, index) => {
+        let hasLowPrice = false;
+
+        card.prices.forEach((price) => {
+          let parsed = parseFloat(JSON.parse(price).price.substring(1));
+          if (parsed < maxPrice) {
+            hasLowPrice = true;
+          }
+        });
+        if (!hasLowPrice) {
+          tntCards.splice(index, 1);
+        }
+      });
+    }
+
+    const perPageCards = tntCards.slice(startIndex, stopIndex);
+    res.status(200).json({ items: perPageCards, total: tntCards.length });
   });
 });
 
 app.get("/amazoncards", (req, res) => {
   const currentPage = req.query.currentPage;
   const keywords = req.query.keywords;
-  const priceLow = req.query.priceLow;
-  const priceHigh = req.query.priceHigh;
+  const maxPrice = req.query.maxPrice;
   const selectedPerPage = req.query.selectedPerPage;
+
+  const stopIndex = currentPage * selectedPerPage;
+  const startIndex = (currentPage - 1) * selectedPerPage;
+
   pool.query(queries.getAllAmazonCards, (error, result) => {
     if (error) throw error;
-    const stopIndex = currentPage * selectedPerPage;
-    const startIndex = (currentPage - 1) * selectedPerPage;
+    let amazonCards = result.rows;
+
     if (keywords) {
-      const filtered = result.rows.filter((item) =>
+      amazonCards = amazonCards.filter((item) =>
         item.name.toLowerCase().includes(keywords.toLowerCase())
       );
-      const perPageCards = filtered.slice(startIndex, stopIndex);
-      res.status(200).json({
-        items: perPageCards,
-        total: result.rowCount,
-        message: keywords,
-      });
-    } else {
-      const perPageCards = result.rows.slice(startIndex, stopIndex);
-      res.status(200).json({ items: perPageCards, total: result.rowCount });
     }
+
+    if (maxPrice) {
+      amazonCards.forEach((card, index) => {
+        let hasLowPrice = false;
+
+        card.prices.forEach((price) => {
+          let parsed = parseFloat(JSON.parse(price).price.substring(1));
+          if (parsed < maxPrice) {
+            hasLowPrice = true;
+          }
+        });
+        if (!hasLowPrice) {
+          amazonCards.splice(index, 1);
+        }
+      });
+    }
+
+    const perPageCards = amazonCards.slice(startIndex, stopIndex);
+    res.status(200).json({ items: perPageCards, total: amazonCards.length });
   });
 });
 
 app.get("/allcards", (req, res) => {
   const currentPage = req.query.currentPage;
   const keywords = req.query.keywords;
-  const priceLow = req.query.priceLow;
-  const priceHigh = req.query.priceHigh;
+  const maxPrice = parseFloat(req.query.maxPrice);
   const selectedPerPage = req.query.selectedPerPage;
 
   const stopIndex = currentPage * selectedPerPage;
   const startIndex = (currentPage - 1) * selectedPerPage;
+
   pool.query(queries.getAllTntCards, (err1, res1) => {
     if (err1) throw err1;
     const tntCards = res1.rows;
     pool.query(queries.getAllAmazonCards, (err2, res2) => {
       if (err2) throw err2;
       const amazonCards = res2.rows;
-      let joinedList = [];
 
-      //compare names between lists and copy over any prices from amazoncard to tntcard,
-      //remove amazoncard from list and push tntcard to joined list
-      for (let i = 0; i < tntCards.length - 1; i++) {
-        for (let j = 0; j < amazonCards.length - 1; j++) {
-          let shortenedName = amazonCards[j].name.substring(0, 30);
-          if (tntCards[i].name.includes(shortenedName)) {
-            tntCards[i].prices.push(...amazonCards[j].prices);
-            tntCards[i].link = [tntCards[i].link, amazonCards[j].link];
-            amazonCards.splice(j, 1);
-          }
-        }
-        joinedList.push(tntCards[i]);
+      let allCards = [...tntCards, ...amazonCards];
+      for (let i = 0; i < allCards.length - 1; i++) {
+        allCards[i].prices = [...new Set(allCards[i].prices)];
       }
 
-      joinedList = [...joinedList, ...amazonCards];
-
-      //remove duplicate prices
-      for (let i = 0; i < joinedList.length - 1; i++) {
-        joinedList[i].prices = [...new Set(joinedList[i].prices)];
+      if (keywords) {
+        allCards = allCards.filter((item) =>
+          item.name.toLowerCase().includes(keywords.toLowerCase())
+        );
       }
-      let priceFiltered = [];
 
-      if (priceLow && priceHigh) {
-        priceFiltered = joinedList.filter((card) => {
-          card.prices.forEach((priceObj) => JSON.parse(priceObj));
+      if (maxPrice) {
+        allCards.forEach((card, index) => {
+          let hasLowPrice = false;
 
-          for (let i = 0; i < card.prices.length - 1; i++) {
-            if (
-              Number(card.prices[i].price) > Number(priceLow) &&
-              Number(card.prices[i].price) < Number(priceHigh)
-            ) {
-              return card;
+          card.prices.forEach((price) => {
+            let parsed = parseFloat(JSON.parse(price).price.substring(1));
+            if (parsed < maxPrice) {
+              hasLowPrice = true;
             }
+          });
+          if (!hasLowPrice) {
+            allCards.splice(index, 1);
           }
         });
       }
 
-      if (keywords) {
-        if (priceFiltered.length > 1) {
-          priceFiltered.filter((card) =>
-            card.name.toLowerCase().includes(keywords.toLowerCase())
-          );
-          const perPageCards = filtered.slice(startIndex, stopIndex);
-          res.status(200).json({
-            items: perPageCards,
-            total: priceFiltered.length,
-            message: keywords,
-          });
-        } else {
-          const filtered = joinedList.filter((item) =>
-            item.name.toLowerCase().includes(keywords.toLowerCase())
-          );
-          const perPageCards = filtered.slice(startIndex, stopIndex);
-          res.status(200).json({
-            items: perPageCards,
-            total: filtered.length,
-            message: keywords,
-          });
-        }
-      } else if (priceLow && priceHigh) {
-        const perPageCards = priceFiltered.slice(startIndex, stopIndex);
-        res
-          .status(200)
-          .json({ items: perPageCards, total: priceFiltered.length });
-      } else {
-        const perPageCards = joinedList.slice(startIndex, stopIndex);
-        res.status(200).json({ items: perPageCards, total: joinedList.length });
-      }
+      const perPageCards = allCards.slice(startIndex, stopIndex);
+      res.status(200).json({ items: perPageCards, total: allCards.length });
     });
   });
 });
