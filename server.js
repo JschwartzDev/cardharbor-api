@@ -1,8 +1,10 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const compression = require("compression");
 const pool = require("./db");
 const queries = require("./queries");
-const PORT = 4400;
+const PORT = process.env.PORT || 4400;
 const app = express();
 
 const whitelist = ["http://localhost:5173/"];
@@ -17,6 +19,8 @@ const corsOptions = {
   },
 };
 
+app.use(helmet());
+app.use(compression());
 app.use(cors());
 app.use(express.json());
 
